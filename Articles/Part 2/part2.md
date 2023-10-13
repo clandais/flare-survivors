@@ -5,10 +5,14 @@
 ## More DI, FSM entry points and MessagePipe
 
 <!-- TOC start -->
-
-- [Adding Messages to the Pipe](#adding-messages-to-the-pipe)
-- [GameEntryPoint as a Finite State Machine](#gameentrypoint-as-a-finite-state-machine)
-- [MessagePipe in action](#messagepipe-in-action)
+- [Unity game architecture Part 2](#unity-game-architecture-part-2)
+  - [More DI, FSM entry points and MessagePipe](#more-di-fsm-entry-points-and-messagepipe)
+    - [Adding Messages to the Pipe](#adding-messages-to-the-pipe)
+    - [GameEntryPoint as a Finite State Machine](#gameentrypoint-as-a-finite-state-machine)
+    - [MessagePipe in action](#messagepipe-in-action)
+      - [Pub / Sub](#pub--sub)
+      - [The Mediator Pattern](#the-mediator-pattern)
+    - [Conclusion](#conclusion)
 
 <!-- TOC end -->
 
@@ -17,7 +21,7 @@
 > If you haven't read part 1 yet, you can find it [here](https://dev.to/clandais/unity-game-architecture-part-1-4a9j). 
 > 
 > As I was thinking about the next part of this series, I realized that having access to the full source code of the project would be a great way to illustrate the concepts I'm talking about... 
-> I cannot just share Bill's source code, so I decided to create a new project, with a similar architecture, but with a different game : **Flare Survivors**. 
+> I cannot just share Bill's source code, so I decided to create a new project, with a similar architecture, but with a different game : **Flare Survivors** so you can follow along and see the code in action here : [clandais/flare-survivors](https://github.com/clandais/flare-survivors).
 
 <!-- TOC --> 
 <a name="adding-messages-to-the-pipe"></a>
@@ -200,6 +204,8 @@ public class GameBootState : BaseGameState
 <!-- TOC end -->
 ### MessagePipe in action
 
+#### Pub / Sub
+
 So, how does it work ?
 
 In the above code sample, where do the `LoadSceneRequest`, `LoadSceneResponse` and `GameStateTransitionMessage` come from ?
@@ -258,3 +264,69 @@ That's a pretty bare main menu, but you get the idea.
 
 When the `PlayButton` is clicked, the `MainMenuEntryPoint` publishes a `GameStateTransitionMessage` with the `GamePlayState` as the new state. 
 The `GameEntryPoint` is listening to `GameStateTransitionMessage` and will switch to the `GamePlayState` when it receives it. 
+
+#### The Mediator Pattern
+
+![The French word for "guitar pick"](./img/mediator.png)
+
+The `AsyncRequestHandler<LoadSceneRequest, LoadSceneResponse>` works in a sligthly different way. It is a pattern called the "Mediator Pattern".
+
+`LoadSceneRequest` and `LoadSceneResponse` are simple structs, too.
+
+```csharp
+public struct LoadSceneRequest
+{
+    public SceneReference SceneReference { get; set; }
+}
+
+public struct LoadSceneResponse
+{
+    public bool IsSuccess { get; set; }
+    // Using addressables, we need to keep track of the handle
+    public AsyncOperationHandle<SceneInstance> Handle { get; set; }
+}
+
+```
+
+Then, we need to create a handler for the request.
+```csharp	
+
+public class SceneAssetAsyncLoadingHandler 
+    : IAsyncRequestHandler<LoadSceneRequest, LoadSceneResponse>
+{
+    // Extending the IAsyncRequestHandler interface
+    public async UniTask<LoadSceneResponse> InvokeAsync(LoadSceneRequest request, CancellationToken cancellationToken = new CancellationToken())
+    {
+        // load the scene
+        // get back the handle
+        // omit error handling :D
+        return new LoadSceneResponse
+        {
+            IsSuccess = true,
+            Handle = handle,
+        };
+
+    }
+}
+```
+
+Finally, we need to register the handler in the `GameLifetimeScope`.
+
+```csharp
+// registration in GameLifetimeScope
+private void RegisterMessagePipe(IContainerBuilder builder)
+{
+    /*** Register MessagePipe ***/
+    // Register the AsyncRequestHandler
+    builder
+        .RegisterAsyncRequestHandler<
+            LoadSceneRequest,
+            LoadSceneResponse,
+            SceneAssetAsyncLoadingHandler>(options);
+}
+```
+
+### Conclusion
+
+I hope I haven't bored you to death with this article. It was a bit heavy on code, but I think it was necessary to illustrate the concepts I wanted to talk about.
+
